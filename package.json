@@ -22,7 +22,8 @@
   "files": [
     "index.js",
     "types/index.d.ts",
-    "percy"
+    "percy",
+    "scripts"
   ],
   "engines": {
     "node": ">=14"
