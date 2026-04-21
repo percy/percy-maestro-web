@@ -44,7 +44,7 @@ program
 
 program
   .command('serve')
-  .description('(DOM-capture mode) Start the Percy capture server — connects to Maestro\'s Chromium via CDP and handles DOM snapshot requests from runScript steps. Use for web flows to get full multi-browser/multi-width support.')
+  .description('(Advanced) Start only the Percy capture server — useful if you want to manage percy exec separately. Most users should use `percy-maestro exec` instead.')
   .option('--port <port>', 'Port to listen on (default: 5339)', (v) => Number(v), 5339)
   .action(async (opts) => {
     try {
@@ -56,6 +56,41 @@ program
       log.error(`serve failed: ${e.message}`);
       process.exit(1);
     }
+  });
+
+program
+  .command('exec')
+  .description('Run `maestro test` with Percy visual testing. Drop-in replacement for `percy exec` that also starts the DOM-capture server for Maestro web flows.')
+  .option('--capture-port <port>', 'Port for the capture server (default: 5339)', (v) => Number(v), 5339)
+  .allowUnknownOption()
+  .action(async () => {
+    const { spawn } = require('child_process');
+    const { startServer } = require('./server/captureServer');
+
+    // Find args after `--`; commander strips them, so read from argv
+    const sep = process.argv.indexOf('--');
+    if (sep === -1 || sep === process.argv.length - 1) {
+      log.error('usage: percy-maestro exec -- <command> [args...]');
+      process.exit(1);
+    }
+    const cmdArgs = process.argv.slice(sep + 1);
+
+    let server;
+    try {
+      server = await startServer({ port: 5339 });
+    } catch (e) {
+      log.error(`failed to start capture server: ${e.message}`);
+      process.exit(1);
+    }
+
+    const child = spawn('percy', ['exec', '--', ...cmdArgs], { stdio: 'inherit' });
+    const cleanup = (code) => {
+      try { server.close(); } catch { /* ignore */ }
+      process.exit(code ?? 0);
+    };
+    child.on('exit', cleanup);
+    process.on('SIGTERM', () => { child.kill('SIGTERM'); });
+    process.on('SIGINT', () => { child.kill('SIGINT'); });
   });
 
 program.parseAsync(process.argv);

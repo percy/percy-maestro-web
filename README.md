@@ -2,7 +2,9 @@
 
 [![npm version](https://img.shields.io/npm/v/@percy/maestro.svg)](https://www.npmjs.com/package/@percy/maestro)
 
-Maestro client library for visual testing with [Percy](https://percy.io). Supports Maestro web flows with full DOM capture (multi-browser, multi-width rendering like `percy-selenium` / `percy-playwright`) and Maestro mobile flows via the screenshot-upload path (like `percy-appium-*`).
+Maestro client library for visual testing with [Percy](https://percy.io).
+
+Supports full DOM capture for Maestro **web flows** — multi-browser, multi-width, cross-origin iframes, ignore regions — identical feature surface to [`@percy/selenium-webdriver`](https://github.com/percy/percy-selenium-javascript) and [`@percy/playwright`](https://github.com/percy/percy-playwright). Plus a screenshot-upload path for Maestro **mobile flows** (iOS / Android).
 
 ## Install
 
@@ -10,25 +12,18 @@ Maestro client library for visual testing with [Percy](https://percy.io). Suppor
 npm install --save-dev @percy/maestro @percy/cli
 ```
 
-Also install the [Maestro CLI](https://docs.maestro.dev) separately on your machine.
+Install the [Maestro CLI](https://docs.maestro.dev) separately (`curl -Ls "https://get.maestro.mobile.dev" | bash`).
 
-## Usage — Web flows (DOM capture, full feature parity)
+## Usage (web flows)
 
-For Maestro web flows (`url: https://...` in YAML), use the DOM-capture path. This renders in Chrome/Safari/Firefox/Edge at every configured width, same as Selenium/Playwright SDKs.
+Exactly like `percy exec -- playwright test` — just swap `percy exec` for `percy-maestro exec`:
 
-### 1. Package scripts
-
-```json
-{
-  "scripts": {
-    "test-web": "percy exec -- bash -c 'percy-maestro serve & SRVPID=$!; sleep 2; maestro test flows/your-flow.yaml; kill $SRVPID; wait 2>/dev/null'"
-  }
-}
+```sh
+export PERCY_TOKEN="<your-web-project-token>"
+percy-maestro exec -- maestro test flow.yaml
 ```
 
-The `percy-maestro serve` command starts a local capture server that connects to Maestro's Chromium instance via CDP, serializes DOM with `@percy/dom`, and posts it to the Percy server that `percy exec` boots.
-
-### 2. YAML flow
+Inside the YAML flow, call Percy at each capture point via `runScript:` (this is the one piece that differs from Selenium/Playwright, because Maestro YAML does not have user-written JavaScript):
 
 ```yaml
 url: https://example.com
@@ -45,108 +40,96 @@ url: https://example.com
     file: ../node_modules/@percy/maestro/scripts/snapshot.js
     env:
       PERCY_SNAPSHOT_NAME: "Sign in page"
-      PERCY_SNAPSHOT_WIDTHS: "375,1280"
 ```
 
-### 3. Environment
+That's it. Percy renders each snapshot in Chrome/Safari/Firefox/Edge across every configured width, same as Selenium/Playwright builds.
 
-```sh
-export PERCY_TOKEN="your-web-project-token"
-```
-
-### 4. Run
-
-```sh
-npm run test-web
-```
-
-Build appears on your Percy dashboard with full diff review across browsers and widths.
-
-### Supported options (via `env:` block of `runScript:`)
+### Options (via `env:`)
 
 | Env var | Maps to | Notes |
 |---|---|---|
 | `PERCY_SNAPSHOT_NAME` | `name` | Required |
-| `PERCY_SNAPSHOT_WIDTHS` | `widths` | Comma-separated (e.g. `"375,1280"`) |
-| `PERCY_SNAPSHOT_MIN_HEIGHT` | `minHeight` | Minimum render height |
-| `PERCY_SNAPSHOT_PERCY_CSS` | `percyCSS` | Inline CSS injected at render time |
-| `PERCY_SNAPSHOT_SCOPE` | `scope` | CSS selector to scope the snapshot |
-| `PERCY_SNAPSHOT_ENABLE_JS` | `enableJavaScript` | `"true"` to run JS at render |
-| `PERCY_SNAPSHOT_IGNORE_REGIONS` | `ignoreRegions` | JSON array of region objects |
+| `PERCY_SNAPSHOT_WIDTHS` | `widths` | `"375,1280"` |
+| `PERCY_SNAPSHOT_MIN_HEIGHT` | `minHeight` | |
+| `PERCY_SNAPSHOT_PERCY_CSS` | `percyCSS` | |
+| `PERCY_SNAPSHOT_SCOPE` | `scope` | CSS selector |
+| `PERCY_SNAPSHOT_ENABLE_JS` | `enableJavaScript` | `"true"` |
+| `PERCY_SNAPSHOT_IGNORE_REGIONS` | `ignoreRegions` | JSON array |
 | `PERCY_SNAPSHOT_CONSIDER_REGIONS` | `considerRegions` | JSON array |
-| `PERCY_SNAPSHOT_SYNC` | `sync` | `"true"` to wait for build finalize |
-| `PERCY_SNAPSHOT_RESPONSIVE` | `responsiveSnapshotCapture` | `"true"` to re-capture DOM per-width |
+| `PERCY_SNAPSHOT_SYNC` | `sync` | `"true"` |
+| `PERCY_SNAPSHOT_RESPONSIVE` | `responsiveSnapshotCapture` | `"true"` |
 
-### Ignore / Consider regions
-
-Use the `createRegion()` helper to build region objects in JS, then serialize them:
+### `createRegion()` helper
 
 ```js
 const { createRegion } = require('@percy/maestro');
 
 const ignoreRegions = [
-  createRegion({ top: 0, right: 0, bottom: 100, left: 0 }),               // coord-based
-  createRegion({ elementXpath: '//div[@id="ad-banner"]' }),              // XPath
-  createRegion({ elementCSS: '#timestamp', algorithm: 'ignore' })        // CSS
+  createRegion({ top: 0, right: 0, bottom: 100, left: 0 }),
+  createRegion({ elementXpath: '//div[@id="ad-banner"]' }),
+  createRegion({ elementCSS: '#timestamp', algorithm: 'ignore' })
 ];
-
 process.env.PERCY_SNAPSHOT_IGNORE_REGIONS = JSON.stringify(ignoreRegions);
 ```
 
-## Usage — Mobile flows (screenshot upload)
+## Usage (mobile flows)
 
-For native Android / iOS flows, use the `upload` subcommand to post PNGs from Maestro's output dir to App Percy.
-
-### YAML
+For native Android / iOS Maestro flows, upload screenshots to App Percy:
 
 ```yaml
 appId: com.example.app
 ---
-- launchApp:
-    clearState: true
+- launchApp
 - takeScreenshot:
     path: ./screenshots/home
-- tapOn: "Login"
-- takeScreenshot:
-    path: ./screenshots/login
 ```
-
-### Run
 
 ```sh
 percy exec -- bash -c 'maestro test flow.yaml && percy-maestro upload --dir ./screenshots'
 ```
 
-The SDK auto-detects Android/iOS via `adb` / `xcrun simctl` and attaches device metadata (model, OS version, screen dims, orientation).
+Device metadata (model, OS, orientation) is auto-detected via `adb` / `xcrun simctl`.
 
-## CLI
+## CLI reference
 
 ```sh
-percy-maestro serve [--port 5339]                  # Start DOM-capture server (web flows)
-percy-maestro upload [--dir <path>] [--url <url>]  # Upload PNGs (mobile flows)
-percy-maestro snapshot <name> [options]            # Explicit snapshot (runScript escape hatch)
+percy-maestro exec -- <command>            # Run any command with Percy + capture server active (web flows)
+percy-maestro upload [options]             # Upload Maestro screenshots to App Percy (mobile flows)
+percy-maestro serve                        # (Advanced) Start only the capture server
 ```
+
+## Feature parity with `@percy/playwright`
+
+| | Playwright | Maestro |
+|---|---|---|
+| DOM capture via `@percy/dom` | ✅ | ✅ |
+| Multi-browser render (Chrome/Safari/Firefox/Edge) | ✅ | ✅ |
+| Multi-width render | ✅ | ✅ |
+| Responsive capture (viewport per width) | ✅ | ✅ |
+| Cross-origin iframe serialization | ✅ | ✅ |
+| Cookies captured & included | ✅ | ✅ |
+| `ignoreRegions` / `considerRegions` / `regions` | ✅ | ✅ |
+| `createRegion()` helper | ✅ | ✅ |
+| `minHeight`, `percyCSS`, `scope`, `enableJavaScript` | ✅ | ✅ |
+| `sync` mode | ✅ | ✅ |
+| `discovery` / `additionalSnapshots` | ✅ | ✅ |
+| `percyScreenshot()` (Percy on Automate) | ✅ | N/A (Maestro not on BrowserStack device cloud) |
 
 ## Architecture
 
-**Web flow (DOM capture)**
 ```
-yarn test-web
-  → percy exec
-    ├─ Percy server (:5338)                      starts the build lifecycle
-    ├─ percy-maestro serve (:5339)               aux capture server
-    │     └─ CDP → Chromium                     via DevToolsActivePort discovery
-    │     └─ PercyDOM.serialize() → :5338
-    └─ maestro test
-          └─ runScript → http.post → :5339 → :5338
-```
-
-**Mobile flow (screenshot upload)**
-```
-percy exec -- maestro test flow.yaml
-  1. maestro test runs, writes PNGs to ./screenshots/
-  2. percy-maestro upload walks the dir, attaches adb/xcrun metadata
-  3. Uploads to App Percy via @percy/sdk-utils
+percy-maestro exec -- maestro test flow.yaml
+  │
+  ├─ percy-maestro process starts capture server on :5339
+  │     └─ CDP ↔ Chromium  (discovered via DevToolsActivePort file)
+  │            runs PercyDOM.serialize() in page context,
+  │            enumerates cross-origin iframes via Target.getTargets,
+  │            captures cookies via Network.getAllCookies
+  │
+  └─ spawns `percy exec -- maestro test flow.yaml` as subprocess
+        ├─ Percy server (:5338)  starts build lifecycle
+        └─ maestro test runs the YAML flow
+              └─ runScript: snapshot.js  →  http.post to :5339  →  :5338
 ```
 
 ## License
