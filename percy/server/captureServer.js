@@ -80,6 +80,11 @@ async function walk(dir, depth, acc) {
 async function captureAndUpload({ name, options = {} }) {
   if (!name) throw new Error('name is required');
 
+  // Merge defaults from .percy.yml (snapshot config section) under per-call options.
+  // Per-call env vars win over project config; project config wins over SDK defaults.
+  const projectDefaults = (utils.percy && utils.percy.config && utils.percy.config.snapshot) || {};
+  options = { ...projectDefaults, ...options };
+
   const port = await findChromiumDevToolsPort();
   log.debug(`connecting to Chromium DevTools on port ${port}`);
 
